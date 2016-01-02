@@ -14,9 +14,21 @@ from collections import defaultdict
 class Society():
     def __init__(self,group_dict, topic_dict, param_dict, socialism_dict):
         """
-        :param group_dict: {groupId:size}, specify how many people in which group
+        :param group_dict: {groupId:[_id, ...]}, specify which people(_id) in which group(groupId)
+        
         :param topic_dict: {topicNum: number of policies in that topic} topic_dict 
          provides information about shape of Belief matrix (not necessarily rectangle)
+         
+        :param config: {
+        
+        generate_motivation_params: {"method":"manual", "motivations":{_id:motivation, ...}}
+        generate_belief_params: {"method":"manual", "beliefs": {_id:{(topic_id, policy_id):belief_value}}}
+        generate_topic_relevance_params: {"method":"manual", "topic_relevances": {_id: {topic_id: relevance}}}
+        
+        "socialism":"Grassroot_democracy"
+        } 
+        """
+        """
         :param param_dict: {power distribution parameter: a
                             belief vector rotate angle: alpha
                             motivation oscillation amplitude: belta,
@@ -34,6 +46,9 @@ class Society():
         self.numOfActors = sum([self.group_dict[key] for key in self.group_dict.keys()])
         self.numOfPolicies = sum([self.topic_dict[key] for key in self.topic_dict.keys()])
         self.system_ballot_history = []
+        
+        
+        
         # Tracking simulation time
         self.nSteps = 0
         self.nElections = 0
@@ -48,7 +63,7 @@ class Society():
     @property
     def BeliefNetwork(self):
         """Compute pairwise belief proximity(reprocical distance) matrix, the 
-        ith diagonal of the matrix expose the elligibility of the actor i
+        ith diagonal of the matrix expose the eligibility of the actor i
         """
         # Belief Network (adjacent matrix, implemented in numpy matrix)
         BN = np.zeros((self.numOfActors, self.numOfActors))
@@ -57,7 +72,7 @@ class Society():
                 if a1.groupId is not a2.groupId:
                     BN[a1.idf, a2.idf] = 0
                 elif a1.idf == a2.idf:
-                    BN[a1.idf, a2.idf] = a1.isEll
+                    BN[a1.idf, a2.idf] = a1.isEli
                 elif a1.idf is not a2.idf:
                     BN[a1.idf, a2.idf] = sigmoid(compute_belief_distance(a1.belief, a2.belief), self.param_dict['sigmoid_decay'])
 
@@ -78,7 +93,7 @@ class Society():
                 if a1.groupId is not a2.groupId:
                     BHN[a1.idf, a2.idf] = 0
                 elif a1.idf == a2.idf:
-                    BHN[a1.idf, a2.idf] = a1.isEll
+                    BHN[a1.idf, a2.idf] = a1.isEli
                 elif a1.idf is not a2.idf:
                     try:
                         BHN[a1.idf, a2.idf] = sigmoid(compute_ballotHistory_distance(a1.ballot_history, 
@@ -157,19 +172,19 @@ class Society():
     #############################################################################
     
     def _allocate_actors(self):
-        # generate random numbers for initializing motivation and belief of actor
-        random_motivations = generate_random_motivation(self.param_dict['a'], self.numOfActors)
-        random_beliefs = generate_random_beliefs(self.numOfActors, self.numOfPolicies, self.topic_dict)
-        count = 0
+        motivations = generate_motivation(self.numOfActors, method="manual", self.config)
+        beliefs = generate_belief(self.numOfActors, method="manual", self.config)
+        topic_relevances = generate_topic_relevance(self.numOfActors, method="manual", self.config)
         
-        for groupId,size in self.group_dict.items():
-            for i in range(size):
-                # build motivation
-                m = random_motivations[count]
-                # build belief vector
-                b = random_beliefs[count]
-                self.actors.append(Actor(groupId,m,b, count))
-                count+=1
+        for groupId,actor_id_list in self.group_dict.items():
+            for actor_id in actor_id_list:
+                motivation = motivations[actor_id]
+                belief = beliefs[actor_id]
+                topic_relevance = topic_relevances[actor_id]
+                
+                self.actors.append(Actor(groupId=groupId,motivation=motivation,
+                                         belief=belief,_id=actor_id,topic_relevance=topic_relevance))
+            
             
     def one_step(self):
         """ Regular change
@@ -182,6 +197,8 @@ class Society():
         self.nSteps += 1
     
     def simul(self, nsteps):
+        """ Main simulation function
+        """
         for step in range(nsteps):
             self.one_step()
             # election
@@ -192,11 +209,11 @@ class Society():
                 self.ballot()
     
     def _clear_candidates(self):
-        """ Set isEll in each actor to be 0 
+        """ Set isEli in each actor to be 0 
         """
         for actor in self.actors:
-            actor.candidate_history.append([actor.isEll])
-            actor.isEll = 0
+            actor.candidate_history.append([actor.isEli])
+            actor.isEli = 0
     
     def _clear_delegators(self):
         """ Set isDel in each actor to be 0
@@ -215,7 +232,7 @@ class Society():
             constituency.sort(key=lambda actor_idf:self.actors[actor_idf].motivation, reverse=True)
             # honor the first numCandidate in the list as candidate
             for i in range(self.param_dict['numCandidate']):
-                self.actors[constituency[i]].isEll = 1
+                self.actors[constituency[i]].isEli = 1
     
 
     def _count_votes(self, votes):
