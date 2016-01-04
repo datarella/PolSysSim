@@ -8,8 +8,6 @@ import igraph as ig
 from collections import defaultdict
 
 class Actor():
-    MOTIVATION_UPPER_BOUNDARY = 1.0
-    MOTIVATION_LOWER_BOUNDARY = 0.0
     def __init__(self, groupId, motivation, belief, _id, topic_relevance):
         """
         param motivation: single numbe (0,1]
@@ -25,7 +23,24 @@ class Actor():
         self.groupId = groupId
         self.topic_relevance = topic_relevance
         
+        #self.relevant_belief = self._compute_relevant_belief()
         
+    @property
+    def relevant_belief(self):
+        return {(topic_id, policy_id): self.belief[(topic_id, policy_id)]*self.topic_relevance[topic_id]  for topic_id, policy_id in self.belief.keys()}
+    
+    # pd.DataFrame with (topic_id,policy_id) as index
+    @property
+    def policy_rank(self):
+        df = pd.DataFrame(self.relevant_belief.values(), 
+                          index=pd.MultiIndex.from_tuples(self.relevant_belief.keys(), names=["topic_id", "policy_id"]),
+                          columns=["value"]).sort_index(level=0)
+        
+        df["rank"] = df.groupby(level=["topic_id"])["value"].rank(ascending=False)
+        return df
+        
+        
+        """
         self.isDel = 0
         self.isEli = 0
         # Keep trace of the actor history
@@ -41,20 +56,20 @@ class Actor():
         self.candidate_history.append(self.isEli)
         # implicit political beliefs,each entry [vote_for_policy_topic1, vote_for_policy_topic2,...]
         self.ballot_history = []
+        """
         
-    """
-    def update_motivation_each_step(self, belta):
+        """
+        def update_motivation_each_step(self, belta):
         # Update Motivation at each simulation step
         
         if self.motivation+belta < Actor.MOTIVATION_UPPER_BOUNDARY and self.motivation+belta > Actor.MOTIVATION_LOWER_BOUNDARY:
             self.motivation += belta
             
         motivation_copy = copy.deepcopy(self.motivation)
-        self.motivation_history.append(motivation_copy)
-    """
+        """
 
-    """
-    def modify_belief(self, alpha):
+        """
+        def modify_belief(self, alpha):
         "" Update Belief at each simulation step
         
         Rotate each topic vector, if the number
@@ -72,7 +87,6 @@ class Actor():
                 delta = random.uniform(-alpha, alpha)
                 cos = np.cos(delta)
                 sin = np.sin(delta)
-
                 D = np.array([[cos,-sin],
                              [sin,cos]])
             elif numAlters == 1:
@@ -82,7 +96,6 @@ class Actor():
                 delta = random.uniform(-alpha, alpha)
                 cos = np.cos(delta)
                 sin = np.sin(delta)
-
                 d = np.array([[cos,-sin],
                              [sin,cos]])
                 ones = [1]*(numAlters-2)
@@ -94,9 +107,3 @@ class Actor():
         # actor keeps track of its belief history
         self.belief_history.append(belief_copy)
         """
-"""
-if __name__ == '__main__':
-    a = Actor(1,2,3,4)
-    a.modify_motivation
-    a.modify_belief
-"""
