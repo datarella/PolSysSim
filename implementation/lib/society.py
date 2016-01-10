@@ -12,11 +12,11 @@ from collections import defaultdict
 
 
 class Society():
-    def __init__(self,group_dict, topic_dict, param_dict, socialism_dict):
+    def __init__(self,group_dict, topic_dict, config):
         """
         :param group_dict: {groupId:[_id, ...]}, specify which people(_id) in which group(groupId)
         
-        :param topic_dict: {topicNum: number of policies in that topic} topic_dict 
+        :param topic_dict: {topicName: [list of policy names in that topic]} topic_dict 
          provides information about shape of Belief matrix (not necessarily rectangle)
          
         :param config: {
@@ -25,7 +25,10 @@ class Society():
         generate_belief_params: {"method":"manual", "beliefs": {_id:{(topic_id, policy_id):belief_value}}}
         generate_topic_relevance_params: {"method":"manual", "topic_relevances": {_id: {topic_id: relevance}}}
         
-        "socialism":"Grassroot_democracy"
+        "socialism":"Grassroot_democracy",
+        "ballotEngine":,
+        "voteEngine":,
+        
         } 
         """
         """
@@ -38,33 +41,49 @@ class Society():
         """
         self.group_dict = group_dict
         self.topic_dict = topic_dict
-        self.param_dict = param_dict
-        self.socialism_dict = socialism_dict
+        self.config = config
         # list holding actors of the society
         self.actors = []
         # sum of actors in all groups
-        self.numOfActors = sum([self.group_dict[key] for key in self.group_dict.keys()])
-        self.numOfPolicies = sum([self.topic_dict[key] for key in self.topic_dict.keys()])
+        self.numOfActors = sum([len(self.group_dict[key]) for key in self.group_dict.keys()])
+        print ("numOfActors: %s" %(self.numOfActors,))
+        # self.numOfPolicies = sum([self.topic_dict[key] for key in self.topic_dict.keys()])
         self.system_ballot_history = []
-        
-        
-        
+                      
         # Tracking simulation time
         self.nSteps = 0
         self.nElections = 0
         self.nBallots = 0
         # Various socialism
-        self.vote_func = socialism_dict['vote_func']
+        self.ballotEngine = config["ballotEngine"]
+        self.voteEngine = config["voteEngine"]
         # Voting of last election
         self.votes = None
 
         self._allocate_actors()
+        
+    def _allocate_actors(self):
+        motivations = generate_motivation(self.numOfActors,**self.config["generate_motivation_params"])
+        beliefs = generate_belief(self.numOfActors,**self.config["generate_belief_params"])
+        topic_relevances = generate_topic_relevance(self.numOfActors, **self.config["generate_topic_relevance_params"])
+        
+        for groupId,actor_id_list in self.group_dict.items():
+            for actor_id in actor_id_list:
+                motivation = motivations[actor_id]
+                belief = beliefs[actor_id]
+                topic_relevance = topic_relevances[actor_id]
+                self.actors.append(Actor(groupId=groupId,motivation=motivation, belief=belief,_id=actor_id,topic_relevance=topic_relevance))
+        
+    def ballot(self):
+        # topic_ids = self.topic_dict.keys()
+        return self.ballotEngine.ballot(self.topic_dict.keys(),self.actors)
     
+    """
     @property
     def BeliefNetwork(self):
-        """Compute pairwise belief proximity(reprocical distance) matrix, the 
-        ith diagonal of the matrix expose the eligibility of the actor i
-        """
+        # Compute pairwise belief proximity(reprocical distance) matrix, the 
+        # ith diagonal of the matrix expose the eligibility of the actor i
+        
         # Belief Network (adjacent matrix, implemented in numpy matrix)
         BN = np.zeros((self.numOfActors, self.numOfActors))
         for a1 in self.actors:
@@ -80,13 +99,13 @@ class Society():
 
     @property
     def BallotHistoryNetwork(self):
-        """Assume Ballot is conducted(if not the matrix will be diagonal), every actor
-        has a "vote" on the topic(even it is not a Delegator). The vote of a Delegator
-        cause an effect in ballot, the votes of others counts only in the ballot_history 
-        of each actor. The similarity of ballot_history is computed and taken as entry in 
-        adjacent matrix. Diagonal records the elligibility of actor has nothing to do 
-        with ballot history similarity
-        """
+        # Assume Ballot is conducted(if not the matrix will be diagonal), every actor
+        # has a "vote" on the topic(even it is not a Delegator). The vote of a Delegator
+        # cause an effect in ballot, the votes of others counts only in the ballot_history 
+        # of each actor. The similarity of ballot_history is computed and taken as entry in 
+        # adjacent matrix. Diagonal records the elligibility of actor has nothing to do 
+        # with ballot history similarity
+        
         BHN = np.zeros((self.numOfActors, self.numOfActors))
         for a1 in self.actors:
             for a2 in self.actors:
@@ -105,9 +124,8 @@ class Society():
     
     @property
     def society_partition(self):
-        """
-        :return: {groupId:list of actors in this partition}
-        """
+        # :return: {groupId:list of actors in this partition}
+
         society_partition = {}
         for groupId in self.group_dict.keys():
             society_partition[groupId]=[]
@@ -121,16 +139,16 @@ class Society():
     
     @property
     def population_motivations(self):
-        """ Population Motivation
-        cross-sectional population statistics (pandas)
-        """
+        # Population Motivation
+        # cross-sectional population statistics (pandas)
+
         motivations = [actor.motivation for actor in self.actors]
         return pd.Series(motivations)
     
     @property
     def population_beliefs(self):
-        """ Population Belief
-        """
+        # Population Belief
+
         topics_dict = {}
         # loop number of topics
         for i in range(len(self.topic_dict)):
@@ -142,9 +160,9 @@ class Society():
     
     @property
     def population_beliefs_with_vote(self):
-        """Calculate the index of rank 1 component of topic vector,
-        and attached to the beliefs panel
-        """
+        # Calculate the index of rank 1 component of topic vector,
+        # and attached to the beliefs panel
+
         beliefs = self.population_beliefs
         beliefs = beliefs.transpose(2,0,1)
         beliefs['max'] = beliefs.apply(lambda x:x.idxmax(),axis=0)
@@ -172,24 +190,22 @@ class Society():
     #############################################################################
     
     def _allocate_actors(self):
-        motivations = generate_motivation(self.numOfActors, method="manual", self.config)
-        beliefs = generate_belief(self.numOfActors, method="manual", self.config)
-        topic_relevances = generate_topic_relevance(self.numOfActors, method="manual", self.config)
+        motivations = generate_motivation(self.numOfActors,**self.config["generate_motivation_params"])
+        beliefs = generate_belief(self.numOfActors,**self.config["generate_belief_params"])
+        topic_relevances = generate_topic_relevance(self.numOfActors, **self.config["generate_topic_relevance_params"])
         
         for groupId,actor_id_list in self.group_dict.items():
             for actor_id in actor_id_list:
                 motivation = motivations[actor_id]
                 belief = beliefs[actor_id]
                 topic_relevance = topic_relevances[actor_id]
+                self.actors.append(Actor(groupId=groupId,motivation=motivation, belief=belief,_id=actor_id,topic_relevance=topic_relevance))
+
                 
-                self.actors.append(Actor(groupId=groupId,motivation=motivation,
-                                         belief=belief,_id=actor_id,topic_relevance=topic_relevance))
-            
-            
     def one_step(self):
-        """ Regular change
-        actor motivation, belief
-        """
+        # Regular change
+        # actor motivation, belief
+
         for actor in self.actors:
             actor.modify_motivation(0)
             actor.modify_belief(self.param_dict['alpha'])
@@ -197,8 +213,8 @@ class Society():
         self.nSteps += 1
     
     def simul(self, nsteps):
-        """ Main simulation function
-        """
+        # Main simulation function
+
         for step in range(nsteps):
             self.one_step()
             # election
@@ -209,24 +225,24 @@ class Society():
                 self.ballot()
     
     def _clear_candidates(self):
-        """ Set isEli in each actor to be 0 
-        """
+        # Set isEli in each actor to be 0
+        
         for actor in self.actors:
             actor.candidate_history.append([actor.isEli])
             actor.isEli = 0
     
     def _clear_delegators(self):
-        """ Set isDel in each actor to be 0
-        """
+        # Set isDel in each actor to be 0
+
         for actor in self.actors:
             actor.delegation_history.append([actor.isDel])
             actor.isDel = 0
         
     
     def _assign_candidates(self):
-        """Choose the highest motivated actor(numCandidate) in
-        each partition
-        """
+        #Choose the highest motivated actor(numCandidate) in
+        #each partition
+
         for groupId in self.society_partition.keys():
             constituency = self.society_partition[groupId]
             constituency.sort(key=lambda actor_idf:self.actors[actor_idf].motivation, reverse=True)
@@ -285,11 +301,10 @@ class Society():
     
     
     def election(self):
-        """ 
-        Use BeliefNetwork(if ballotHistory is empty), otherwise election take the feedback
-        from ballot by using BallotHistoryNetwork (or a mixture of BeliefNetwork and 
-        BallotHistoryNetwork)
-        """
+        #Use BeliefNetwork(if ballotHistory is empty), otherwise election take the feedback
+        #from ballot by using BallotHistoryNetwork (or a mixture of BeliefNetwork and 
+        #BallotHistoryNetwork)
+       
         print '---Election---'
         self.nElections += 1
         
@@ -307,8 +322,7 @@ class Society():
         self.votes = votes
         delegators =  self._assign_delegator(votes)
         return delegators, votes
-        
-    
+
     def ballot(self):
         print '---Ballot---'
         self.nBallots += 1
@@ -347,5 +361,5 @@ class Society():
         # record in system history
         ballot_result = _count_ballot(ballot_df)
         self.system_ballot_history.append(ballot_result)
-        
         return ballot_result
+    """
